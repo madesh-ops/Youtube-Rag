@@ -1,0 +1,19 @@
+# Ingestion: YouTube transcripts and chunking
+langchain-community>=0.4.2
+langchain-text-splitters>=1.1.2
+youtube-transcript-api>=1.2.4
+
+# Embeddings and vector store
+sentence-transformers>=6.1.0
+chromadb>=1.5.9
+numpy>=2.5.3
+
+# Generation (Groq LLM)
+langchain-core>=1.6.3
+langchain-groq>=1.1.3
+python-dotenv>=1.2.3
+
+# Web server
+fastapi>=0.141.1
+uvicorn>=0.53.0
+pydantic>=2.13.5

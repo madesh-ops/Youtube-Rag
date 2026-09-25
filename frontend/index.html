@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>YouTube RAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f5f7;
+    --surface: #ffffff;
+    --surface-2: #f0f0f3;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --faint: #aeaeb2;
+    --hairline: rgba(0, 0, 0, 0.08);
+    --accent: #0071e3;
+    --accent-hover: #0077ed;
+    --accent-soft: rgba(0, 113, 227, 0.12);
+    --on-accent: #ffffff;
+    --ok: #28a745;
+    --warn: #b25000;
+    --error: #d70015;
+    --chrome: rgba(245, 245, 247, 0.72);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.03);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+    --console-bg: #1c1c1e;
+    --console-text: #e5e5ea;
+    --radius-lg: 22px;
+    --radius-md: 14px;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --surface: #1c1c1e;
+      --surface-2: #2c2c2e;
+      --text: #f5f5f7;
+      --muted: #98989d;
+      --faint: #636366;
+      --hairline: rgba(255, 255, 255, 0.1);
+      --accent: #0a84ff;
+      --accent-hover: #409cff;
+      --accent-soft: rgba(10, 132, 255, 0.18);
+      --ok: #30d158;
+      --warn: #ffb340;
+      --error: #ff453a;
+      --chrome: rgba(0, 0, 0, 0.68);
+      --shadow-sm: none;
+      --shadow-md: none;
+      --console-bg: #0d0d0f;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 100%/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ---------- Translucent chrome ---------- */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--chrome);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 0.5px solid var(--hairline);
+  }
+  .topbar-inner {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0.75rem clamp(1rem, 3vw, 3rem);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    letter-spacing: -0.01em;
+  }
+  .logo {
+    width: 1.5rem; height: 1.5rem;
+    border-radius: 0.4rem;
+    background: linear-gradient(180deg, #ff3b30, #d70015);
+    display: grid; place-items: center;
+  }
+  .logo svg { width: 0.7rem; height: 0.7rem; fill: #fff; margin-left: 1px; }
+
+  main {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 2.5rem clamp(1rem, 3vw, 3rem) 4rem;
+    display: grid;
+    gap: 1.25rem;
+  }
+  .col { display: grid; gap: 1.25rem; align-content: start; min-width: 0; }
+  @media (min-width: 1000px) {
+    main {
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+      grid-template-areas: "hero hero" "left right" "foot foot";
+      column-gap: 1.5rem;
+    }
+    .hero { grid-area: hero; }
+    .col-left { grid-area: left; }
+    .col-right { grid-area: right; }
+    footer { grid-area: foot; }
+    /* Right column stays in view while the answer scrolls */
+    .col-right { position: sticky; top: 4.5rem; align-self: start; max-height: calc(100vh - 5.5rem); }
+    .col-right .sources-card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .col-right .sources { overflow-y: auto; overscroll-behavior: contain; min-height: 0; margin: 0 -0.5rem; padding: 0 0.5rem; }
+    .col-right { grid-template-rows: minmax(0, 1fr) auto; }
+    #answer { min-height: 12rem; }
+  }
+
+  /* ---------- Typography ---------- */
+  .hero { padding: 0.5rem 0.25rem 0.75rem; }
+  .display {
+    font-family: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+    font-weight: 400;
+    font-optical-sizing: auto;
+  }
+  .hero h1 {
+    font-size: clamp(3.25rem, 8vw, 6rem);
+    line-height: 0.95;
+    letter-spacing: -0.025em;
+    margin: 0 0 0.75rem;
+  }
+  .hero h1 em {
+    font-style: italic;
+    padding-right: 0.06em; /* keep the italic overhang from clipping */
+    background: linear-gradient(100deg, var(--accent) 10%, #bf5af2 60%, #ff375f 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  @media (prefers-contrast: more) {
+    .hero h1 em { background: none; color: var(--text); }
+  }
+  .hero p {
+    margin: 0;
+    font-size: 1.1875rem;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    color: var(--muted);
+    max-width: 34em;
+  }
+  h2 {
+    font-family: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+    font-size: 1.75rem;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    font-weight: 400;
+    margin: 0;
+  }
+  .eyebrow {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    margin: 0 0 0.25rem;
+  }
+
+  /* ---------- Cards ---------- */
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-md);
+    border: 0.5px solid var(--hairline);
+  }
+  .card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  /* ---------- Steps ---------- */
+  .step + .step {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 0.5px solid var(--hairline);
+  }
+  .step-title { display: flex; align-items: center; gap: 0.625rem; margin-bottom: 0.875rem; }
+  .step-num {
+    width: 1.5rem; height: 1.5rem;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 0.8125rem; font-weight: 600;
+    background: var(--accent); color: var(--on-accent);
+    transition: background-color 300ms var(--ease-out), color 300ms var(--ease-out);
+  }
+  .step-title label { font-weight: 600; font-size: 1.0625rem; letter-spacing: -0.015em; }
+  .step.locked .step-num { background: var(--surface-2); color: var(--faint); }
+  .step.locked .step-title label { color: var(--faint); }
+
+  /* ---------- Fields ---------- */
+  .field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3125rem 0.3125rem 0.3125rem 1rem;
+    background: var(--surface-2);
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  }
+  .field:focus-within {
+    background: var(--surface);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+  .field.invalid { border-color: var(--error); box-shadow: 0 0 0 4px color-mix(in srgb, var(--error) 15%, transparent); }
+  .field svg.lead { width: 1.1rem; height: 1.1rem; flex: none; stroke: var(--faint); fill: none; stroke-width: 2; }
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.625rem 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 1rem; /* >=16px: no zoom-on-focus on iOS */
+    letter-spacing: -0.01em;
+  }
+  input::placeholder { color: var(--faint); }
+  input:disabled { cursor: not-allowed; }
+
+  .hint {
+    font-size: 0.8125rem;
+    color: var(--muted);
+    margin: 0.5rem 0.25rem 0;
+    min-height: 1.25em;
+    transition: color 150ms ease;
+  }
+  .hint.good { color: var(--ok); }
+  .hint.bad { color: var(--error); }
+
+  /* ---------- Buttons ---------- */
+  button {
+    font: inherit;
+    cursor: pointer;
+    border: 0;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 2.5rem;
+    padding: 0 1.125rem;
+    border-radius: 0.75rem;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    transition: transform 160ms var(--ease-out), background-color 150ms ease, opacity 150ms ease;
+  }
+  @media (hover: hover) { .btn:hover:not(:disabled) { background: var(--accent-hover); } }
+  .btn:active:not(:disabled) { transform: scale(0.96); transition-duration: 80ms; }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+  .btn:focus-visible, .ghost:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .btn.icon { width: 2.5rem; padding: 0; border-radius: 50%; }
+  .btn.icon svg { width: 1.1rem; height: 1.1rem; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
+  .btn .spinner { display: none; }
+  .btn.busy { opacity: 1; }
+  .btn.busy .label, .btn.busy svg { visibility: hidden; }
+  .btn.busy .spinner { display: block; position: absolute; }
+  .spinner {
+    width: 1.05rem; height: 1.05rem;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: spin 700ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .ghost {
+    background: transparent;
+    color: var(--accent);
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.5rem;
+    transition: background-color 150ms ease, transform 160ms var(--ease-out);
+  }
+  @media (hover: hover) { .ghost:hover { background: var(--accent-soft); } }
+  .ghost:active { transform: scale(0.96); transition-duration: 80ms; }
+
+  /* ---------- Video preview ---------- */
+  .video {
+    display: none;
+    align-items: center;
+    gap: 0.875rem;
+    margin-top: 0.875rem;
+    padding: 0.625rem;
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+  }
+  .video.show { display: flex; animation: materialize 450ms var(--ease-out) both; }
+  .video img {
+    width: 7rem;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: 0.5rem;
+    background: var(--hairline);
+    flex: none;
+  }
+  .video-meta { min-width: 0; }
+  .video-meta .id { font: 600 0.9375rem/1.3 ui-monospace, "SF Mono", Consolas, monospace; letter-spacing: 0; }
+
+  /* ---------- Status ---------- */
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    margin-top: 0.25rem;
+  }
+  .status b { color: var(--text); font-weight: 600; }
+  .dot {
+    width: 0.5rem; height: 0.5rem;
+    border-radius: 50%;
+    background: var(--faint);
+    flex: none;
+    transition: background-color 200ms ease;
+  }
+  .status[data-state="busy"] .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .status[data-state="ok"] .dot { background: var(--ok); }
+  .status[data-state="error"] .dot { background: var(--error); }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  /* ---------- Answer ---------- */
+  .answer {
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    letter-spacing: -0.005em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .answer.fresh { animation: materialize 500ms var(--ease-out) both; }
+  .empty { color: var(--faint); }
+  .thinking { display: grid; gap: 0.625rem; }
+  .thinking span {
+    height: 0.875rem;
+    border-radius: 0.4rem;
+    background: linear-gradient(90deg, var(--surface-2) 0%, var(--hairline) 50%, var(--surface-2) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+  .thinking span:nth-child(2) { width: 92%; }
+  .thinking span:nth-child(3) { width: 64%; }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+  @keyframes materialize {
+    from { opacity: 0; transform: translateY(6px) scale(0.99); filter: blur(4px); }
+    to   { opacity: 1; transform: none; filter: blur(0); }
+  }
+
+  /* ---------- Sources ---------- */
+  .count {
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--surface-2);
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    letter-spacing: 0;
+    vertical-align: 0.15em;
+    margin-left: 0.25rem;
+  }
+  .count:empty { display: none; }
+  .sources { display: grid; }
+  details.source { border-top: 0.5px solid var(--hairline); }
+  details.source:first-child { border-top: 0; }
+  details.source summary {
+    list-style: none;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 0.25rem;
+    border-radius: 0.5rem;
+    transition: background-color 150ms ease;
+  }
+  details.source summary::-webkit-details-marker { display: none; }
+  details.source summary:active { background: var(--surface-2); transition-duration: 0ms; }
+  .rank {
+    width: 1.75rem; height: 1.75rem;
+    border-radius: 0.5rem;
+    display: grid; place-items: center;
+    font-size: 0.8125rem; font-weight: 600;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .preview {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9375rem;
+    color: var(--text);
+  }
+  .score { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .score-bar { width: 3rem; height: 0.25rem; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .score-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .chevron { width: 0.8rem; height: 0.8rem; stroke: var(--faint); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: transform 300ms var(--ease-out); }
+  details[open] .chevron { transform: rotate(90deg); }
+  .source-text {
+    margin: 0 0.25rem 1rem 2.75rem;
+    white-space: pre-wrap;
+    color: var(--muted);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+  details[open] .source-text { animation: materialize 350ms var(--ease-out) both; }
+
+  /* ---------- Console (advanced, one level deeper) ---------- */
+  details.console-wrap > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    border-radius: 0.5rem;
+  }
+  details.console-wrap > summary::-webkit-details-marker { display: none; }
+  details.console-wrap[open] > summary { margin-bottom: 1rem; }
+  .console-actions { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+  .err-count { color: var(--error); font-size: 0.8125rem; font-weight: 600; }
+  .err-count:empty { display: none; }
+  #console {
+    background: var(--console-bg);
+    color: var(--console-text);
+    font: 0.78rem/1.65 ui-monospace, "SF Mono", Consolas, monospace;
+    border-radius: var(--radius-md);
+    padding: 0.875rem 1rem;
+    height: 260px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log-time { color: #636366; }
+  .log-info { color: #64d2ff; }
+  .log-ok { color: #30d158; }
+  .log-warn { color: #ffd60a; }
+  .log-error { color: #ff453a; }
+  .log-server { color: var(--console-text); }
+
+  footer { text-align: center; font-size: 0.75rem; color: var(--faint); padding-top: 0.5rem; }
+
+  @media (max-width: 560px) {
+    main { padding-top: 1.5rem; }
+    .card { padding: 1.125rem; border-radius: 18px; }
+    .score-bar { display: none; }
+    .source-text { margin-left: 0.25rem; }
+  }
+
+  /* ---------- Accessibility preferences ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; }
+    .video.show, .answer.fresh, details[open] .source-text { animation: fade 200ms ease both !important; }
+    .btn:active:not(:disabled), .ghost:active { transform: none; }
+    .spinner { animation: spin 1.2s linear infinite !important; }
+  }
+  @keyframes fade { from { opacity: 0; } }
+  @media (prefers-reduced-transparency: reduce) {
+    .topbar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  }
+  @media (prefers-contrast: more) {
+    :root { --hairline: rgba(127, 127, 127, 0.6); --muted: var(--text); }
+    .topbar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+    .field { border-color: var(--hairline); }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 10 10"><path d="M1 0.5v9l8-4.5z"/></svg></span>
+    YouTube RAG
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <h1 class="display">Ask any <em>video.</em></h1>
+    <p>Paste a YouTube link, then ask a question. Answers come only from what was said in the video.</p>
+  </section>
+
+  <div class="col col-left">
+  <section class="card">
+    <div class="step" id="step1">
+      <div class="step-title"><span class="step-num">1</span><label for="link">Load a video</label></div>
+      <div class="field" id="linkField">
+        <svg class="lead" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+        <input id="link" placeholder="youtube.com/watch?v=…" autocomplete="off" spellcheck="false" inputmode="url">
+        <button class="btn" id="ingestBtn"><span class="label">Load</span><span class="spinner" aria-hidden="true"></span></button>
+      </div>
+      <div class="hint" id="videoHint">Works with watch, youtu.be, shorts and embed links, or an 11‑character ID.</div>
+      <div class="video" id="video">
+        <img id="thumb" alt="">
+        <div class="video-meta">
+          <div class="eyebrow">Loaded video</div>
+          <div class="id" id="videoIdText"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step locked" id="step2">
+      <div class="step-title"><span class="step-num">2</span><label for="question">Ask a question</label></div>
+      <div class="field">
+        <svg class="lead" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="question" placeholder="What is this video about?" disabled autocomplete="off">
+        <button class="btn icon" id="askBtn" disabled aria-label="Ask">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="hint status" id="status" data-state="idle" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">No video loaded yet.</span></div>
+    </div>
+  </section>
+
+  <section class="card" aria-live="polite">
+    <div class="card-head"><h2>Answer</h2></div>
+    <div id="answer" class="answer empty">Your answer will appear here.</div>
+  </section>
+  </div>
+
+  <div class="col col-right">
+  <section class="card sources-card">
+    <div class="card-head"><h2>Sources<span id="sourceCount" class="count"></span></h2></div>
+    <div id="sources" class="sources"><div class="empty">The transcript excerpts behind each answer will appear here.</div></div>
+  </section>
+
+  <section class="card">
+    <details class="console-wrap" id="consoleWrap">
+      <summary>
+        <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+        <h2>Activity</h2>
+        <span class="console-actions">
+          <span class="err-count" id="errCount"></span>
+          <button class="ghost" id="clearBtn" type="button">Clear</button>
+        </span>
+      </summary>
+      <div id="console"></div>
+    </details>
+  </section>
+  </div>
+
+  <footer>Transcripts via YouTube · Embeddings run locally · Answers by Groq</footer>
+</main>
+
+<script>
+  // Where your Python API runs. Leave empty if the API serves this page itself.
+  const API_BASE = "";
+  const DEFAULT_HINT = "Works with watch, youtu.be, shorts and embed links, or an 11‑character ID.";
+
+  const $ = (id) => document.getElementById(id);
+  const consoleEl = $("console");
+  let errors = 0;
+
+  function log(message, level = "info") {
+    const line = document.createElement("div");
+    const time = document.createElement("span");
+    time.className = "log-time";
+    time.textContent = new Date().toLocaleTimeString() + "  ";
+    const text = document.createElement("span");
+    text.className = "log-" + level;
+    text.textContent = message;
+    line.append(time, text);
+    consoleEl.append(line);
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+    if (level === "error") {
+      errors++;
+      $("errCount").textContent = errors === 1 ? "1 error" : `${errors} errors`;
+    }
+  }
+
+  function logServer(lines) {
+    (lines || []).forEach((l) => log(l, "server"));
+  }
+
+  function setStatus(state, ...parts) {
+    $("status").dataset.state = state;
+    $("statusText").replaceChildren(...parts);
+  }
+
+  function bold(text) {
+    const b = document.createElement("b");
+    b.textContent = text;
+    return b;
+  }
+
+  function parseVideoId(input) {
+    const value = input.trim();
+    if (/^[\w-]{11}$/.test(value)) return value;
+    try {
+      const url = new URL(/^https?:\/\//i.test(value) ? value : "https://" + value);
+      if (url.hostname.includes("youtu.be")) return url.pathname.slice(1, 12);
+      if (url.searchParams.get("v")) return url.searchParams.get("v");
+      const match = url.pathname.match(/\/(shorts|embed|live)\/([\w-]{11})/);
+      if (match) return match[2];
+    } catch (_) { /* not a URL */ }
+    return null;
+  }
+
+  async function post(path, body) {
+    const res = await fetch(API_BASE + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    let data = {};
+    try { data = await res.json(); } catch (_) { /* non-JSON error body */ }
+    logServer(data.logs);
+    if (!res.ok) throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  function setBusy(busy, which) {
+    $("ingestBtn").disabled = busy;
+    $("askBtn").disabled = busy || $("question").disabled;
+    $("ingestBtn").classList.toggle("busy", busy && which === "ingest");
+    $("askBtn").classList.toggle("busy", busy && which === "ask");
+  }
+
+  function replay(el, cls) {
+    el.classList.remove(cls);
+    void el.offsetWidth; // restart the animation
+    el.classList.add(cls);
+  }
+
+  async function ingest() {
+    const videoId = parseVideoId($("link").value);
+    if (!videoId) {
+      $("linkField").classList.add("invalid");
+      $("videoHint").className = "hint bad";
+      $("videoHint").textContent = "That doesn't look like a YouTube link or video ID.";
+      log("Could not find a video ID in that link.", "error");
+      return;
+    }
+    log(`Loading transcript for ${videoId} ...`);
+    setStatus("busy", "Fetching transcript and building embeddings…");
+    setBusy(true, "ingest");
+    try {
+      const data = await post("/ingest", { video_id: videoId });
+      setStatus("ok", "Ready · ", bold(`${data.chunks ?? "?"} chunks`), " indexed");
+      $("thumb").src = `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+      $("videoIdText").textContent = videoId;
+      replay($("video"), "show");
+      $("step2").classList.remove("locked");
+      $("question").disabled = false;
+      $("question").focus();
+      log(`Ingested ${data.chunks ?? "?"} chunks.`, "ok");
+    } catch (err) {
+      setStatus("error", "Couldn't load that video. ", err.message);
+      log("Ingest failed: " + err.message, "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function renderSources(sources) {
+    const box = $("sources");
+    box.innerHTML = "";
+    $("sourceCount").textContent = sources.length ? String(sources.length) : "";
+    if (!sources.length) {
+      box.innerHTML = '<div class="empty">No excerpts were retrieved.</div>';
+      return;
+    }
+    sources.forEach((s) => {
+      const score = Math.max(0, Math.min(1, s.similarity_score ?? 0));
+      const d = document.createElement("details");
+      d.className = "source";
+      const summary = document.createElement("summary");
+
+      const rank = document.createElement("span");
+      rank.className = "rank";
+      rank.textContent = s.rank;
+
+      const preview = document.createElement("span");
+      preview.className = "preview";
+      preview.textContent = (s.content || "").replace(/\s+/g, " ").trim();
+
+      const scoreBox = document.createElement("span");
+      scoreBox.className = "score";
+      scoreBox.title = "Similarity score";
+      const bar = document.createElement("span");
+      bar.className = "score-bar";
+      bar.innerHTML = `<span style="width:${(score * 100).toFixed(1)}%"></span>`;
+      scoreBox.append(bar, score.toFixed(2));
+
+      const chevron = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      chevron.setAttribute("class", "chevron");
+      chevron.setAttribute("viewBox", "0 0 24 24");
+      chevron.innerHTML = '<path d="m9 6 6 6-6 6"/>';
+
+      summary.append(rank, preview, scoreBox, chevron);
+      const text = document.createElement("p");
+      text.className = "source-text";
+      text.textContent = s.content;
+      d.append(summary, text);
+      box.append(d);
+    });
+  }
+
+  async function ask() {
+    const question = $("question").value.trim();
+    if (!question || $("question").disabled) return;
+    log(`Question: ${question}`);
+    $("answer").className = "answer";
+    $("answer").innerHTML = '<div class="thinking" aria-label="Thinking"><span></span><span></span><span></span></div>';
+    setStatus("busy", "Searching the transcript…");
+    setBusy(true, "ask");
+    try {
+      const data = await post("/ask", { question });
+      $("answer").textContent = data.answer;
+      replay($("answer"), "fresh");
+      renderSources(data.sources || []);
+      setStatus("ok", "Answered from ", bold(`${(data.sources || []).length} excerpts`));
+      log(`Answer received using ${(data.sources || []).length} chunks.`, "ok");
+    } catch (err) {
+      $("answer").className = "answer empty";
+      $("answer").textContent = "Something went wrong. Open Activity below for details.";
+      setStatus("error", "Couldn't get an answer.");
+      log("Ask failed: " + err.message, "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  $("link").addEventListener("input", () => {
+    const value = $("link").value.trim();
+    const id = parseVideoId(value);
+    $("linkField").classList.remove("invalid");
+    $("videoHint").className = id ? "hint good" : "hint";
+    $("videoHint").textContent = id ? `Found video ID ${id}` : DEFAULT_HINT;
+  });
+  $("ingestBtn").addEventListener("click", ingest);
+  $("askBtn").addEventListener("click", ask);
+  $("link").addEventListener("keydown", (e) => e.key === "Enter" && ingest());
+  $("question").addEventListener("keydown", (e) => e.key === "Enter" && ask());
+  $("clearBtn").addEventListener("click", (e) => {
+    e.preventDefault(); // don't toggle the disclosure
+    consoleEl.innerHTML = "";
+    errors = 0;
+    $("errCount").textContent = "";
+  });
+
+  log("Page ready. Paste a YouTube link to start.");
+</script>
+</body>
+</html>
