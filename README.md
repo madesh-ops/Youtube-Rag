@@ -4,6 +4,13 @@ Ask questions about any YouTube video. The app downloads the video's transcript,
 
 It comes with a small web page: paste a link, ask a question, and see the answer along with the transcript excerpts it was based on.
 
+
+## User Interface
+
+<img width="1907" height="1078" alt="image" src="https://github.com/user-attachments/assets/eec4ad23-ee74-4c77-ba81-5e62cdd9b9bc" />
+
+
+
 ## How it works
 
 ```
